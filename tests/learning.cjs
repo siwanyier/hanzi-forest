@@ -1,0 +1,47 @@
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+let clock=Date.parse('2026-10-26T01:00:00Z');class Clock extends Date{constructor(...args){super(...(args.length?args:[clock]))}static now(){return clock}}
+const el={innerHTML:'',style:{},children:[],focus(){},scrollIntoView(){}};
+const ctx={Date:Clock,Intl,Set,Math,JSON,Blob,console,setTimeout,clearTimeout,localStorage:{getItem(){return null},setItem(){}},document:{addEventListener(){},querySelector(){return el},querySelectorAll(){return []},body:{style:{}}},window:{addEventListener(){}}};vm.createContext(ctx);
+vm.runInContext(fs.readFileSync('dist/data.js','utf8')+'\n'+fs.readFileSync('dist/expansion.js','utf8')+'\n'+fs.readFileSync('dist/app.js','utf8').replace(/\nrender\(\);\s*$/,''),ctx);
+const run=s=>vm.runInContext(s,ctx);
+assert.equal(run('BASE.length===new Set(BASE.map(x=>x.char)).size'),true,'unique character bank');
+assert.equal(run('BASE.every(x=>x.word.includes(x.char)&&x.sentence.includes(x.char))'),true,'word and sentence include target');
+assert.equal(run('BASE.every(x=>x.pinyin&&[0,1,2].includes(x.group))'),true,'complete metadata');
+run("updateRecord('海',true)");assert.equal(run("statusOf('海')"),'growing');run("updateRecord('海',true)");assert.equal(run("record('海').days.length"),1,'same day repetition cannot establish mastery');
+clock+=86400000;run("updateRecord('海',true)");assert.equal(run("statusOf('海')"),'growing');clock+=86400000;run("updateRecord('海',true)");assert.equal(run("statusOf('海')"),'mastered');run("updateRecord('海',false)");assert.equal(run("statusOf('海')"),'weak','forgotten character loses mastery');assert.equal(run("record('海').due-Date.now()"),86400000);
+run("state=initial();state.settings.difficulty='gentle';renderTask=()=>{};start()");assert.equal(run("session.queue.filter(x=>x.type!=='teach').length"),24);assert.equal(run("session.queue.filter(x=>x.type==='teach').length"),6);assert.equal(run("session.queue.filter(x=>x.type==='teach').every(x=>session.queue.findIndex(y=>y.char===x.char&&y.type!=='teach')-session.queue.indexOf(x)>1)"),true,'new retrieval is separated from teaching');
+run('state.settings.newCount=0;start()');assert.equal(run("session.queue.some(x=>x.type==='teach')"),false);assert.equal(run("session.queue.every(x=>['listen','context'].includes(x.type))"),true,'practice uses selection rather than self-grading');assert.equal(run("session.queue.some(x=>get(x.char).group===2&&!record(x.char).seen)"),false,'review-only excludes unseen exploration pool');
+assert.equal(run("BASE.every(x=>{const a=optionsFor(x.char);return a.length===4&&new Set(a).size===4&&a.includes(x.char)})"),true);
+run("state.custom.push({...get('海'),word:'海边',sentence:'海边有沙子。'});state=validate(JSON.parse(JSON.stringify(state)))");assert.equal(run("get('海').word"),'海边','parent edits survive backup validation');
+assert.throws(()=>run("validate({version:2,records:{}})"));
+assert.equal(run("validate({version:1,records:{},settings:{round:8}}).settings.round"),24,'existing browsers receive the longer lesson');
+assert.equal(run("bank().every(x=>optionsFor(x.char).filter(c=>x.word.includes(c)).length===1)"),true,'spoken word has exactly one matching choice');
+run("state=initial();state.settings.difficulty='gentle';session={queue:[{char:'海',type:'listen',retry:false},{char:'山',type:'listen'},{char:'花',type:'context'},{char:'雨',type:'listen'}],index:0,solved:0,helped:0,answered:false,hinted:false,results:[],retries:new Map(),saved:false};answer(false,'山')");
+assert.equal(run("session.queue[3].char"),'海');assert.equal(run("session.queue[3].type"),'context','retry uses a different task');assert.equal(run("statusOf('海')"),'weak');assert.equal(run("session.retries.get('海')"),1);
+run("session.index=3;session.answered=false;answer(true,'海')");assert.equal(run("session.retries.get('海')"),1,'correct retry does not schedule itself again');assert.equal(run("statusOf('海')"),'weak','correct retry is not counted as mastery');
+run("session.index=3;session.answered=false;answer(false,'山')");assert.equal(run("session.retries.get('海')"),2);assert.equal(run("session.queue[6].char"),'海','last-step errors receive two intervening questions');
+run("session.index=6;session.answered=false;const size=session.queue.length;answer(false,'山');this.finalSize=size");assert.equal(run('session.queue.length===finalSize'),true,'retries are bounded');
+run("start(true)");assert.equal(run("session.queue[0].char"),'海','unsettled word is prioritized in next round');
+console.log(`PASS: ${run('BASE.length')} character contexts; mastery, same-day guard, forgetting, session pacing, review-only, four choices, bounded delayed retries, backup validation.`);
+
+run("state=initial();start()");assert.equal(run("state.settings.difficulty"),'advanced');
+assert.equal(run("session.queue.filter(t=>t.type!=='teach').length"),24,'advanced keeps lesson length');
+assert.equal(run("session.queue.filter(t=>t.type==='teach').every(t=>get(t.char).advanced)"),true,'advanced new words come from reading vocabulary');
+assert.equal(run("session.queue.filter(t=>t.type!=='teach').every(t=>get(t.char).group>0)"),true,'skip introductory characters');
+assert.equal(run("session.queue.some(t=>t.type==='word')"),true,'advanced includes word construction');
+assert.equal(run("Object.entries(WORD_ITEMS).every(([c,x])=>x.options.length===4&&new Set(x.options).size===4&&x.options.includes(c)&&x.phrase.includes('＿'))"),true,'curated word choices are complete');
+assert.equal(run("optionsFor('晴').every(c=>'晴清睛情请精'.includes(c))"),true,'similar-looking distractors');
+assert.equal(run("validate({version:1,records:{海:{seen:2,level:1,days:['2026-10-26']}},settings:{lessonVersion:2,round:12}}).settings.difficulty"),'advanced','existing browsers advance without losing records');
+assert.equal(run("validate({version:1,records:{海:{seen:2,level:1,days:['2026-10-26']}},settings:{lessonVersion:2,round:12}}).records['海'].seen"),2);
+assert.equal(run("STORIES.filter(x=>x.label.includes('进阶')).length"),2);
+assert.equal(run("STORIES.every(x=>x.questions.every(q=>new Set(q.opts).size===q.opts.length&&q.answer>=0&&q.answer<q.opts.length))"),true);
+console.log('PASS: advanced selection, near-character choices, word construction, story answers, progress migration.');
+
+assert.equal(run('BASE.length'),464,'character bank doubled from 232');
+assert.equal(run('new Set(BASE.map(x=>x.char)).size'),464,'all 464 characters are distinct');
+assert.equal(run("validate({version:1,records:{海:{seen:2,level:1,days:['2026-10-26']}},settings:{lessonVersion:2,round:12,newCount:3}}).settings.round"),24,'old device defaults are upgraded to 24 questions');
+assert.equal(run("validate({version:1,records:{},settings:{lessonVersion:3,round:32,newCount:8}}).settings.round"),32,'preserve a newly chosen round size');
+assert.equal(run("validate({version:1,records:{},settings:{lessonVersion:3,round:32,newCount:8}}).settings.newCount"),8,'larger new-word limit survives backup');
+assert.equal(run("session.queue.filter(t=>t.type!=='teach').length"),24,'24 unique recognition questions before retries');
+assert.equal(run("new Set(session.queue.filter(t=>t.type!=='teach').map(t=>t.char)).size"),24,'no duplicate starting targets');
+console.log('PASS: 464 unique characters, 24 questions, larger lesson options, backward-compatible progress.');

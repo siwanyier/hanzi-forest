@@ -1,0 +1,10 @@
+{
+  "name": "hanzi-forest",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A browser-based Chinese character learning game",
+  "scripts": {
+    "test": "node tests/learning.cjs && node tests/media.cjs",
+    "start": "python3 -m http.server 8080 --directory dist"
+  }
+}
